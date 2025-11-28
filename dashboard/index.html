@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Realtime HR & Motion Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        body {
+            background: #f5f6fa;
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+        }
+
+        h2 {
+            margin-top: 0;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: row;
+            gap: 20px;
+            padding: 20px;
+        }
+
+        .left {
+            flex: 3;
+        }
+
+        .right {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .card {
+            background: white;
+            padding: 15px;
+            border-radius: 12px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+        }
+
+        .big-value {
+            font-size: 40px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .label-chip {
+            font-size: 22px;
+            padding: 10px;
+            border-radius: 6px;
+            color: white;
+            width: fit-content;
+        }
+
+        .clean { background: #16a34a; }
+        .light { background: #f59e0b; }
+        .heavy { background: #ef4444; }
+
+        canvas {
+            height: 180px !important;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <div class="left">
+
+        <div class="card">
+            <h2>Accelerometer & Gyroscope Magnitudes</h2>
+            <canvas id="imuChart"></canvas>
+        </div>
+
+        <div class="card">
+            <h2>PPG – Noisy</h2>
+            <canvas id="noisyChart"></canvas>
+        </div>
+
+        <div class="card">
+            <h2>PPG – Clean (Synth)</h2>
+            <canvas id="cleanChart"></canvas>
+        </div>
+
+        <div class="card">
+            <h2>PPG – NLMS Filtered</h2>
+            <canvas id="filteredChart"></canvas>
+        </div>
+
+    </div>
+
+    <div class="right">
+
+        <div class="card">
+            <h2>Heart Rate</h2>
+            <div class="big-value" id="hr_val">--</div>
+        </div>
+
+        <div class="card">
+            <h2>Motion Score</h2>
+            <div class="big-value" id="motion_val">--</div>
+        </div>
+
+        <div class="card">
+            <h2>Artifact Level</h2>
+            <div id="label_chip" class="label-chip clean">--</div>
+        </div>
+
+        <div class="card">
+            <h2>Packet Rate</h2>
+            <div class="big-value" id="rate_val">-- Hz</div>
+        </div>
+
+    </div>
+
+</div>
+
+
+<script>
+const WS_URL = "ws://192.168.230.84:8765";  
+
+let ws = new WebSocket(WS_URL);
+
+let lastPacketTime = Date.now();
+
+function createChart(ctx, label, color) {
+    return new Chart(ctx, {
+        type: "line",
+        data: {
+            labels: [],
+            datasets: [{
+                label: label,
+                borderColor: color,
+                borderWidth: 2,
+                data: [],
+                tension: 0.2
+            }]
+        },
+        options: {
+            animation: false,
+            responsive: true,
+            scales: {
+                x: { display: false },
+                y: { display: true }
+            }
+        }
+    });
+}
+
+
+const imuChart     = createChart(document.getElementById("imuChart"), "acc_mag", "blue");
+imuChart.data.datasets.push({ label: "gyro_mag", borderColor: "red", data: [] });
+
+const noisyChart   = createChart(document.getElementById("noisyChart"), "PPG noisy", "#e63946");
+const cleanChart   = createChart(document.getElementById("cleanChart"), "PPG clean", "#457b9d");
+const filteredChart= createChart(document.getElementById("filteredChart"), "PPG filtered", "#2a9d8f");
+
+
+ws.onmessage = (event) => {
+    let d = JSON.parse(event.data);
+
+    // ------------------ Update charts ------------------
+    imuChart.data.labels.push("");
+    imuChart.data.datasets[0].data.push(d.acc_mag);
+    imuChart.data.datasets[1].data.push(d.gyro_mag);
+
+    noisyChart.data.labels.push("");
+    noisyChart.data.datasets[0].data.push(d.ppg_noisy);
+
+    cleanChart.data.labels.push("");
+    cleanChart.data.datasets[0].data.push(d.ppg_clean);
+
+    filteredChart.data.labels.push("");
+    filteredChart.data.datasets[0].data.push(d.ppg_filtered);
+
+    // Limit size
+    [imuChart, noisyChart, cleanChart, filteredChart].forEach(chart => {
+        if (chart.data.labels.length > 200) {
+            chart.data.labels.shift();
+            chart.data.datasets.forEach(ds => ds.data.shift());
+        }
+        chart.update();
+    });
+
+    document.getElementById("hr_val").textContent = d.hr_synth;
+    document.getElementById("motion_val").textContent = d.motion_score.toFixed(2);
+
+    // Artifact label
+    const chip = document.getElementById("label_chip");
+    if (d.label === "clean") chip.className = "label-chip clean";
+    else if (d.label === "artifact_light") chip.className = "label-chip light";
+    else chip.className = "label-chip heavy";
+    chip.textContent = d.label;
+
+    // Packet rate
+    let now = Date.now();
+    let rate = 1000 / (now - lastPacketTime);
+    lastPacketTime = now;
+    document.getElementById("rate_val").textContent = rate.toFixed(1) + " Hz";
+};
+
+ws.onopen = () => console.log("Dashboard Connected.");
+ws.onerror = () => console.log("WS error");
+ws.onclose = () => console.log("WS closed");
+</script>
+
+</body>
+</html>
