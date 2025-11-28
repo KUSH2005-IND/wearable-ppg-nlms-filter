@@ -119,7 +119,7 @@ w(t+1) = w(t) + ( μ / ( ||x||² + ε ) ) * e(t) * x_vec(t)
 
 ---
 
-![Realtime Dashboard](dashboard\dash.png)
+![Realtime Dashboard](dashboard/dash.png)
 
 # 📁 **5. Repository Structure**
 📦 wearable-ppg-nlms-filter/
